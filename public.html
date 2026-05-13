@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Risultati Torneo - Live</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+  import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
+  window.firebaseApp = initializeApp;
+  window.firebaseDb = getDatabase;
+  window.dbRef = ref;
+  window.dbOnValue = onValue;
+  window.dbGet = get;
+</script>
+<style>
+  body { 
+    font-family: 'Outfit', sans-serif; 
+    background-color: #0f172a; 
+    color: #f8fafc; 
+    background-image: radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), transparent 40%),
+                      radial-gradient(circle at bottom left, rgba(147, 51, 234, 0.15), transparent 40%);
+    background-attachment: fixed;
+  }
+  
+  /* Glassmorphism utilities */
+  .glass {
+    background: rgba(30, 41, 59, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  
+  .glass-card {
+    background: linear-gradient(145deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  
+  .glass-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.3);
+  }
+
+  /* Custom Scrollbar for Gironi */
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* Tabs */
+  .tab-btn { position: relative; transition: color 0.3s ease; }
+  .tab-btn.active { color: #fff; font-weight: 800; }
+  .tab-btn::after {
+    content: ''; position: absolute; bottom: -2px; left: 50%; width: 0; height: 3px;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+    transition: width 0.3s ease, left 0.3s ease;
+    border-radius: 3px;
+  }
+  .tab-btn.active::after { width: 100%; left: 0; }
+
+  /* Girone Pills */
+  .girone-pill { transition: all 0.2s ease; cursor: pointer; }
+  .girone-pill.active { background: linear-gradient(135deg, #3b82f6, #6366f1); color: white; border-color: transparent; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4); }
+
+  /* Table styling */
+  .premium-table tr { transition: background 0.2s ease; }
+  .premium-table tr:hover { background: rgba(255, 255, 255, 0.03); }
+  .premium-table td, .premium-table th { border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .premium-table tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body class="min-h-screen p-0 m-0 pb-20">
+
+<!-- HEADER -->
+<header class="glass sticky top-0 z-20 shadow-lg">
+  <div class="max-w-4xl mx-auto">
+    <div class="flex flex-col items-center py-5 border-b border-white/5">
+      <h1 class="text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 uppercase">
+        Live Score
+      </h1>
+      <div class="flex items-center gap-2 mt-1">
+        <span class="relative flex h-2.5 w-2.5">
+          <span id="livePing" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 hidden"></span>
+          <span id="liveDot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-slate-500"></span>
+        </span>
+        <p id="tourneyCodeDisplay" class="text-slate-400 text-xs font-semibold uppercase tracking-widest">Dati Locali</p>
+      </div>
+    </div>
+    
+    <!-- MAIN TABS -->
+    <div class="flex">
+      <button onclick="switchTab('risultati')" id="tabRisultati" class="tab-btn active flex-1 py-4 text-center text-slate-400 font-semibold uppercase tracking-wider text-sm">Risultati</button>
+      <button onclick="switchTab('classifica')" id="tabClassifica" class="tab-btn flex-1 py-4 text-center text-slate-400 font-semibold uppercase tracking-wider text-sm">Classifica</button>
+    </div>
+  </div>
+</header>
+
+<!-- GIRONI FILTER -->
+<div class="max-w-4xl mx-auto px-4 pt-6 pb-2">
+  <div id="gironiFilterContainer" class="flex gap-2 overflow-x-auto hide-scrollbar snap-x py-2">
+    <!-- Pills injected here -->
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<main class="max-w-4xl mx-auto px-4">
+  
+  <!-- RISULTATI SECTION -->
+  <div id="sectionRisultati" class="space-y-4 animate-[fadeIn_0.3s_ease-out]">
+    <!-- Results injected here -->
+  </div>
+
+  <!-- CLASSIFICA SECTION -->
+  <div id="sectionClassifica" class="hidden space-y-8 animate-[fadeIn_0.3s_ease-out]">
+    <!-- Standings injected here -->
+  </div>
+
+</main>
+
+<script>
+// ===== STATE =====
+let savedMatches = [];
+let availableGironi = new Set();
+let currentGirone = 'Tutti'; // 'Tutti' means show all
+
+// ===== FIREBASE CONFIG =====
+const firebaseConfig = {
+  apiKey: "AIzaSyCqqE177-RuRlNu1XVWiFzF0LSTojukW9Y",
+  authDomain: "appreferto.firebaseapp.com",
+  databaseURL: "https://appreferto-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "appreferto",
+  storageBucket: "appreferto.firebasestorage.app",
+  messagingSenderId: "801505935388",
+  appId: "1:801505935388:web:7e7540f9aab1c0e1a39fd9"
+};
+
+let db = null;
+let sessionId = null;
+
+// ===== INIT =====
+window.onload = () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionParam = urlParams.get('session');
+  
+  if (sessionParam) {
+    sessionId = sessionParam.toUpperCase();
+    document.getElementById('tourneyCodeDisplay').textContent = "Torneo: " + sessionId;
+    initFirebase();
+  } else {
+    loadLocalData();
+  }
+};
+
+function initFirebase() {
+  if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+    console.warn("Firebase non configurato. Uso dati locali.");
+    loadLocalData();
+    return;
+  }
+  
+  try {
+    const app = window.firebaseApp(firebaseConfig);
+    db = window.firebaseDb(app);
+    
+    // Set live indicators
+    document.getElementById('livePing').classList.remove('hidden');
+    document.getElementById('liveDot').classList.replace('bg-slate-500', 'bg-green-500');
+
+    window.dbOnValue(window.dbRef(db, `sessions/${sessionId}/savedMatches`), (snapshot) => {
+      const data = snapshot.val();
+      savedMatches = data || [];
+      processData();
+    });
+  } catch (e) {
+    console.error("Firebase Init Error:", e);
+    loadLocalData();
+  }
+}
+
+function loadLocalData() {
+  savedMatches = JSON.parse(localStorage.getItem('basketMatches') || '[]');
+  processData();
+}
+
+function processData() {
+  // Extract gironi
+  availableGironi.clear();
+  savedMatches.forEach(m => {
+    if (m.girone) availableGironi.add(m.girone);
+  });
+  
+  renderGironiFilter();
+  refreshUI();
+}
+
+// ===== UI LOGIC =====
+window.switchTab = function(tab) {
+  document.getElementById('tabRisultati').classList.remove('active');
+  document.getElementById('tabClassifica').classList.remove('active');
+  document.getElementById('sectionRisultati').classList.add('hidden');
+  document.getElementById('sectionClassifica').classList.add('hidden');
+
+  if (tab === 'risultati') {
+    document.getElementById('tabRisultati').classList.add('active');
+    document.getElementById('sectionRisultati').classList.remove('hidden');
+  } else {
+    document.getElementById('tabClassifica').classList.add('active');
+    document.getElementById('sectionClassifica').classList.remove('hidden');
+  }
+  refreshUI();
+}
+
+window.selectGirone = function(g) {
+  currentGirone = g;
+  renderGironiFilter(); // update active state
+  refreshUI();
+}
+
+function renderGironiFilter() {
+  const container = document.getElementById('gironiFilterContainer');
+  const gironiArray = ['Tutti', ...Array.from(availableGironi).sort()];
+  
+  container.innerHTML = gironiArray.map(g => {
+    const isActive = g === currentGirone;
+    const baseClass = "girone-pill snap-start whitespace-nowrap px-5 py-2 rounded-full text-sm font-bold border";
+    const activeClass = isActive 
+      ? "active border-transparent text-white" 
+      : "border-white/10 text-slate-400 bg-white/5 hover:bg-white/10";
+      
+    return `<button onclick="selectGirone('${g}')" class="${baseClass} ${activeClass}">${g}</button>`;
+  }).join('');
+}
+
+function refreshUI() {
+  if (!document.getElementById('sectionRisultati').classList.contains('hidden')) {
+    renderRisultati();
+  } else {
+    renderClassifica();
+  }
+}
+
+// ===== RENDER RISULTATI =====
+function renderRisultati() {
+  const container = document.getElementById('sectionRisultati');
+  let matches = savedMatches;
+  
+  if (currentGirone !== 'Tutti') {
+    matches = matches.filter(m => (m.girone || "Girone Unico") === currentGirone);
+  }
+
+  if (matches.length === 0) {
+    container.innerHTML = `
+      <div class="glass-card p-10 text-center flex flex-col items-center justify-center">
+        <div class="text-4xl mb-3">🏀</div>
+        <p class="text-slate-400 font-medium">Nessuna partita trovata.</p>
+      </div>`;
+    return;
+  }
+  
+  const reversed = [...matches].reverse();
+  
+  container.innerHTML = reversed.map(m => {
+    const gironeLabel = m.girone ? m.girone : 'Girone Unico';
+    const isWinnerA = m.scoreA > m.scoreB;
+    const isWinnerB = m.scoreB > m.scoreA;
+    
+    // Punteggi
+    const scoreAHtml = `<span class="text-3xl sm:text-4xl ${isWinnerA ? 'font-black text-white' : 'font-semibold text-slate-400'}">${m.scoreA}</span>`;
+    const scoreBHtml = `<span class="text-3xl sm:text-4xl ${isWinnerB ? 'font-black text-white' : 'font-semibold text-slate-400'}">${m.scoreB}</span>`;
+    
+    return `
+    <div class="glass-card p-5">
+      <div class="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
+        <span class="text-xs font-bold uppercase tracking-wider text-blue-400">${gironeLabel}</span>
+        <span class="text-slate-500 text-xs font-medium bg-slate-800/50 px-2 py-1 rounded-md">FINALE</span>
+      </div>
+      
+      <div class="flex justify-between items-center">
+        <!-- Team A -->
+        <div class="flex-1 flex flex-col items-center sm:items-end sm:pr-8">
+          <div class="text-base sm:text-xl font-bold ${isWinnerA ? 'text-white' : 'text-slate-300'} text-center sm:text-right w-full truncate mb-2" title="${m.teamA}">${m.teamA}</div>
+        </div>
+        
+        <!-- Score -->
+        <div class="flex items-center justify-center gap-3 sm:gap-6 px-4 py-2 bg-slate-900/50 rounded-2xl border border-white/5 shadow-inner">
+          ${scoreAHtml}
+          <div class="w-1.5 h-1.5 rounded-full bg-slate-600"></div>
+          ${scoreBHtml}
+        </div>
+        
+        <!-- Team B -->
+        <div class="flex-1 flex flex-col items-center sm:items-start sm:pl-8">
+          <div class="text-base sm:text-xl font-bold ${isWinnerB ? 'text-white' : 'text-slate-300'} text-center sm:text-left w-full truncate mb-2" title="${m.teamB}">${m.teamB}</div>
+        </div>
+      </div>
+      
+      <div class="text-center mt-4">
+        <span class="text-[10px] text-slate-500 uppercase tracking-widest">${m.date}</span>
+      </div>
+    </div>
+    `;
+  }).join('');
+}
+
+// ===== RENDER CLASSIFICA =====
+function renderClassifica() {
+  const container = document.getElementById('sectionClassifica');
+  
+  if (savedMatches.length === 0) {
+    container.innerHTML = `
+      <div class="glass-card p-10 text-center flex flex-col items-center justify-center">
+        <div class="text-4xl mb-3">🏆</div>
+        <p class="text-slate-400 font-medium">Classifica non ancora disponibile.</p>
+      </div>`;
+    return;
+  }
+
+  const standingsByGirone = {};
+  
+  savedMatches.forEach(m => {
+    const g = m.girone || "Girone Unico";
+    if (currentGirone !== 'Tutti' && g !== currentGirone) return;
+    
+    if (!standingsByGirone[g]) standingsByGirone[g] = {};
+    if (!standingsByGirone[g][m.teamA]) standingsByGirone[g][m.teamA] = { wins: 0, losses: 0, ptsFor: 0, ptsAgainst: 0 };
+    if (!standingsByGirone[g][m.teamB]) standingsByGirone[g][m.teamB] = { wins: 0, losses: 0, ptsFor: 0, ptsAgainst: 0 };
+    
+    const sA = parseInt(m.scoreA) || 0;
+    const sB = parseInt(m.scoreB) || 0;
+    
+    standingsByGirone[g][m.teamA].ptsFor += sA;
+    standingsByGirone[g][m.teamA].ptsAgainst += sB;
+    standingsByGirone[g][m.teamB].ptsFor += sB;
+    standingsByGirone[g][m.teamB].ptsAgainst += sA;
+    
+    if (sA > sB) {
+      standingsByGirone[g][m.teamA].wins++;
+      standingsByGirone[g][m.teamB].losses++;
+    } else if (sB > sA) {
+      standingsByGirone[g][m.teamB].wins++;
+      standingsByGirone[g][m.teamA].losses++;
+    }
+  });
+
+  const gironiKeys = Object.keys(standingsByGirone).sort();
+  
+  if (gironiKeys.length === 0) {
+    container.innerHTML = `
+      <div class="glass-card p-10 text-center flex flex-col items-center justify-center">
+        <div class="text-4xl mb-3">🏆</div>
+        <p class="text-slate-400 font-medium">Nessun dato per questo girone.</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = gironiKeys.map(gName => {
+    const teams = Object.keys(standingsByGirone[gName]).map(tName => {
+      const stats = standingsByGirone[gName][tName];
+      const diff = stats.ptsFor - stats.ptsAgainst;
+      const winPct = (stats.wins + stats.losses) > 0 ? (stats.wins / (stats.wins + stats.losses)).toFixed(3).substring(1) : ".000";
+      return { name: tName, ...stats, diff, winPct };
+    });
+    
+    teams.sort((a, b) => {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      if (b.losses !== a.losses) return a.losses - b.losses;
+      return b.diff - a.diff;
+    });
+
+    const rowsHtml = teams.map((t, idx) => {
+      // Highlight prime posizioni (es. 1° o 2°)
+      let posClass = "text-slate-400";
+      if (idx === 0) posClass = "text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)]";
+      if (idx === 1) posClass = "text-slate-300 drop-shadow-[0_0_5px_rgba(203,213,225,0.6)]";
+      if (idx === 2) posClass = "text-amber-600 drop-shadow-[0_0_5px_rgba(217,119,6,0.6)]";
+
+      return `
+      <tr class="text-sm sm:text-base font-medium">
+        <td class="px-4 py-4 w-12 text-center font-black text-xl ${posClass}">${idx + 1}</td>
+        <td class="px-4 py-4 font-bold text-white text-base">${t.name}</td>
+        <td class="px-4 py-4 text-center">
+          <span class="bg-blue-900/50 text-blue-200 px-3 py-1 rounded-lg border border-blue-500/30">${t.wins}-${t.losses}</span>
+        </td>
+        <td class="px-4 py-4 text-center text-slate-400 hidden sm:table-cell">${t.winPct}</td>
+        <td class="px-4 py-4 text-center text-slate-400 hidden sm:table-cell">${t.ptsFor}</td>
+        <td class="px-4 py-4 text-center text-slate-400 hidden sm:table-cell">${t.ptsAgainst}</td>
+        <td class="px-4 py-4 text-center font-bold ${t.diff > 0 ? 'text-green-400' : (t.diff < 0 ? 'text-red-400' : 'text-slate-500')}">${t.diff > 0 ? '+'+t.diff : t.diff}</td>
+      </tr>
+    `}).join('');
+
+    return `
+      <div class="glass-card overflow-hidden">
+        <div class="bg-gradient-to-r from-blue-600/20 to-purple-600/20 px-6 py-4 border-b border-white/10 flex justify-between items-center">
+          <h3 class="font-black text-xl text-white uppercase tracking-widest drop-shadow-md">${gName}</h3>
+          <div class="w-8 h-1 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full"></div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse min-w-max premium-table">
+            <thead>
+              <tr class="bg-slate-900/50 text-[11px] uppercase tracking-widest text-slate-400 border-b border-white/5">
+                <th class="px-4 py-3 font-semibold text-center w-12">Pos</th>
+                <th class="px-4 py-3 font-semibold">Squadra</th>
+                <th class="px-4 py-3 font-semibold text-center">W-L</th>
+                <th class="px-4 py-3 font-semibold text-center hidden sm:table-cell">PCT</th>
+                <th class="px-4 py-3 font-semibold text-center hidden sm:table-cell">PF</th>
+                <th class="px-4 py-3 font-semibold text-center hidden sm:table-cell">PS</th>
+                <th class="px-4 py-3 font-semibold text-center">Diff</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Add CSS animation for fade in
+document.head.insertAdjacentHTML('beforeend', \`
+<style>
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+</style>
+\`);
+</script>
+</body>
+</html>
